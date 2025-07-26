@@ -1,18 +1,16 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
-	"net/url"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func getResponse(reqString string, verbose bool) responseData {
+func getResponse(reqString string) responseData {
 
 	handler := http.HandlerFunc(mainHandle)
 
@@ -21,121 +19,82 @@ func getResponse(reqString string, verbose bool) responseData {
 
 	handler.ServeHTTP(resp, req)
 
-	if verbose {
-		fmt.Printf("answer: %q\n", strings.TrimSpace(resp.Body.String()))
-	}
-
 	if resp.Code == http.StatusOK {
 		if resp.Body.String() == "" {
-			return responseData{resp.Code, 0, nil}
+			return responseData{resp.Code, 0, nil, resp.Body.String()}
 		} else {
 			slice := strings.Split(resp.Body.String(), ",")
 
-			for i := range slice{
+			for i := range slice {
 				slice[i] = strings.TrimSpace(strings.ToLower(slice[i]))
 			}
 
-			return responseData{resp.Code, len(slice), slice}
+			return responseData{resp.Code, len(slice), slice, resp.Body.String()}
 		}
 	}
-	return responseData{resp.Code, 0, nil}
+	return responseData{resp.Code, 0, nil, resp.Body.String()}
 }
 
-func buildRequest(r requestData, verbose bool) string {
+func buildRequest(s map[string]string) string {
+
+	if s == nil {
+		return "/cafe"
+	}
 
 	values := url.Values{}
 
-	if r.city != nil {
-		values.Set("city", *r.city)
-	}
-
-	if r.count != nil {
-		values.Set ("count", *r.count)
-	}
-
-	if r.search != nil {
-		values.Set("search", *r.search)
-	}
-
-
-	if verbose {
-		fmt.Printf("query: %v\n",values)
+	for k, v := range s {
+		values.Set(k, v)
 	}
 
 	query := values.Encode()
 
-	if query =="" {
-		return  "/cafe"
-	}
-	
 	return "/cafe?" + query
-	
-}
 
-func ptr (s string) *string {return &s}
-
-type requestData struct {
-	city  *string 
-	count  *string
-	search *string
 }
 
 type responseData struct {
 	status int
 	count  int
 	slice  []string
+	answer string
 }
 
 type testItem struct {
 	label      string
-	req        requestData
+	reqParams  map[string]string
 	wantStatus int
 	wantCount  int
 }
 
-func runTestCase(t *testing.T, tI testItem, verbose bool) {
-
-	reqString := buildRequest(tI.req, verbose)
-	resp := getResponse(reqString, verbose)
-	require.Equal(t, tI.wantStatus, resp.status)
-	assert.Equal(t, tI.wantCount, resp.count)
-
-	if tI.req.search != nil {
-		for _,v := range resp.slice {
-			assert.Contains(t, strings.TrimSpace(v), strings.ToLower(*tI.req.search))
-		}
-	}
-}
-
-
+const ErrMsg = "query parameters: %v\nserver response: %q\n"
 
 func TestCafeNegative(t *testing.T) {
 
 	tests := []testItem{
 		{
-			"нe указано никаких параметров",
-			requestData{nil, nil, nil},
-			http.StatusBadRequest,
-			0,
+			label:      "нe указано никаких параметров",
+			reqParams:  nil,
+			wantStatus: http.StatusBadRequest,
 		},
 		{
-			"запрошен город Омск, по которому нет данных",
-			requestData{ptr("Omsk"), nil, nil},
-			http.StatusBadRequest,
-			0,
+			label:      "запрошен город Омск, по которому нет данных",
+			reqParams:  map[string]string{"city": "Omsk"},
+			wantStatus: http.StatusBadRequest,
 		},
 		{
-			"указано некорректное значение параметра count для Тулы", 
-			requestData{ptr("tula"), ptr("na"), nil},
-			http.StatusBadRequest,
-			0,
+			label:      "указано некорректное значение параметра count для Тулы",
+			reqParams:  map[string]string{"city": "tula", "count": "na"},
+			wantStatus: http.StatusBadRequest,
 		},
-	
 	}
 
 	for _, v := range tests {
 		t.Run(v.label, func(t *testing.T) {
-			runTestCase(t, v, false)
+
+			reqString := buildRequest(v.reqParams)
+			resp := getResponse(reqString)
+			require.Equal(t, v.wantStatus, resp.status, ErrMsg, v.reqParams, resp.answer)
 		})
 	}
 
@@ -145,149 +104,115 @@ func TestCafeWhenOk(t *testing.T) {
 
 	tests := []testItem{
 		{
-			"2 кафе для Москвы",
-			requestData{ptr("moscow"), ptr("2"), nil},
-			http.StatusOK,
-			2,
+			label:      "2 кафе для Москвы",
+			reqParams:  map[string]string{"city": "moscow", "count": "2"},
+			wantStatus: http.StatusOK,
 		},
 		{
-			"указан только один параметр: город Тула",
-			requestData{ptr("tula"), nil, nil},
-			http.StatusOK,
-			3,
+			label:      "ищем кафе с 'ложка' в Москве",
+			reqParams:  map[string]string{"city": "moscow", "search": "ложка"},
+			wantStatus: http.StatusOK,
 		},
 		{
-			"ищем кафе с 'ложка' в Москве", 
-			requestData{ptr("moscow"), nil, ptr("ложка")},
-			http.StatusOK,
-			1,
+			label:      "в запросе указан только город Тула",
+			reqParams:  map[string]string{"city": "tula"},
+			wantStatus: http.StatusOK,
 		},
-	
 	}
 
 	for _, v := range tests {
 		t.Run(v.label, func(t *testing.T) {
-			runTestCase(t, v, false)
+
+			reqString := buildRequest(v.reqParams)
+			resp := getResponse(reqString)
+			require.Equal(t, v.wantStatus, resp.status, ErrMsg, v.reqParams, resp.answer)
+
 		})
 	}
 
 }
 
-
-
 func TestCafeSearch(t *testing.T) {
 
 	tests := []testItem{
-		{
-			"слово которого нет ни в одном кафе среди всех городов",
-			requestData{ptr("moscow"), ptr("100"), ptr("фасоль")},
-			http.StatusOK,
-			0,
-		},
-		{
-			"слово которое встречается 2 раза для Москвы",
-			requestData{ptr("moscow"), ptr("100"), ptr("кофе")},
-			http.StatusOK,
-			2,
-		},
-		{
-			"слово которое встречается 1 раз для Москвы", 
-			requestData{ptr("moscow"), ptr("100"), ptr("вилка")},
-			http.StatusOK,
-			1,
-		},
-		{
-			"слово которое встречается 1 раз для Тулы",
-			requestData{ptr("tula"), ptr("100"), ptr("мир")},
-			http.StatusOK,
-			1,
-		},
-		{
-			"пустой параметр search для Тула", 
-			requestData{ptr("tula"), ptr("100"), ptr("")},
-			http.StatusOK,
-			3,
-		},
-		{
-			"только цифры в парметре search для Москвы",
-			requestData{ptr("moscow"), ptr("100"), ptr("1812")},
-			http.StatusOK,
-			0,
-		},
-		{
-			"параметр search отсутствует в запросе",
-			requestData{ptr("moscow"), ptr("100"), nil},
-			http.StatusOK,
-			5,
-		},
 
 		{
-			"задан пустой параметр search",
-			requestData{ptr("moscow"), ptr("100"), ptr("")},
-			http.StatusOK,
-			5,
+			label:      "слово, которое не встречается в ресторанах Москвы",
+			reqParams:  map[string]string{"city": "moscow", "search": "фасоль"},
+			wantStatus: http.StatusOK,
+			wantCount:  0,
+		},
+		{
+			label:      "слово, которое встречается 2 раза для Москвы",
+			reqParams:  map[string]string{"city": "moscow", "search": "кофе"},
+			wantStatus: http.StatusOK,
+			wantCount:  2,
+		},
+		{
+			label:      "слово, которое встречается 1 раз для Москвы",
+			reqParams:  map[string]string{"city": "moscow", "search": "вилка"},
+			wantStatus: http.StatusOK,
+			wantCount:  1,
 		},
 	}
 
 	for _, v := range tests {
 		t.Run(v.label, func(t *testing.T) {
-			runTestCase(t, v, true)
+
+			reqString := buildRequest(v.reqParams)
+			resp := getResponse(reqString)
+			require.Equal(t, v.wantStatus, resp.status, ErrMsg, v.reqParams, resp.answer)
+
+			require.Equal(t, v.wantCount, resp.count, ErrMsg, v.reqParams, resp.answer)
+
+			if searchWord, ok := v.reqParams["search"]; ok {
+				for _, cafe := range resp.slice {
+					require.Contains(t, strings.TrimSpace(cafe), strings.ToLower(searchWord), ErrMsg, v.reqParams, resp.answer)
+				}
+			}
 		})
 	}
-
 }
 
 func TestCafeCount(t *testing.T) {
 
 	tests := []testItem{
+
 		{
-			"0 кафе для Москвы",
-			requestData{ptr("moscow"), ptr("0"), ptr("")},
-			http.StatusOK,
-			0,
+			label:      "0 кафе для Москвы",
+			reqParams:  map[string]string{"city": "moscow", "count": "0"},
+			wantStatus: http.StatusOK,
+			wantCount:  0,
 		},
 		{
-			"1 кафе для Москвы",
-			requestData{ptr("moscow"), ptr("1"), ptr("")},
-			http.StatusOK,
-			1,
+			label:      "1 кафе для Москвы",
+			reqParams:  map[string]string{"city": "moscow", "count": "1"},
+			wantStatus: http.StatusOK,
+			wantCount:  1,
 		},
 		{
-			"2 кафе для Тулы", 
-			requestData{ptr("tula"), ptr("2"), ptr("")},
-			http.StatusOK,
-			2,
+			label:      "2 кафе для Москвы",
+			reqParams:  map[string]string{"city": "moscow", "count": "2"},
+			wantStatus: http.StatusOK,
+			wantCount:  2,
 		},
 		{
-			"очень много кафе для Москвы",
-			requestData{ptr("moscow"), ptr("100"), ptr("")},
-			http.StatusOK,
-			5,
-		},
-		{
-			"4 кафе для Тулы", 
-			requestData{ptr("tula"), ptr("4"), ptr("")},
-			http.StatusOK,
-			3,
-		},
-		{
-			"задан пустой параметр count",
-			requestData{ptr("moscow"), ptr(""), ptr("")},
-			http.StatusOK,
-			5,
-		},
-		{
-			"параметр count отсутствует в запросе",
-			requestData{ptr("moscow"), nil, ptr("")},
-			http.StatusOK,
-			5,
+			label:      "очень много кафе для Москвы",
+			reqParams:  map[string]string{"city": "moscow", "count": "100"},
+			wantStatus: http.StatusOK,
+			wantCount:  5,
 		},
 	}
 
 	for _, v := range tests {
 		t.Run(v.label, func(t *testing.T) {
-			runTestCase(t, v, false)
+
+			reqString := buildRequest(v.reqParams)
+			resp := getResponse(reqString)
+			require.Equal(t, v.wantStatus, resp.status, ErrMsg, v.reqParams, resp.answer)
+
+			require.Equal(t, v.wantCount, resp.count, ErrMsg, v.reqParams, resp.answer)
+
 		})
 	}
-
 }

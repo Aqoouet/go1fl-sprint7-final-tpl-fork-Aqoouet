@@ -1,0 +1,14 @@
+mode: set
+files/main.go:15.59,21.20 4 1
+files/main.go:21.20,23.17 2 1
+files/main.go:23.17,26.4 2 0
+files/main.go:28.2,30.9 3 1
+files/main.go:30.9,33.3 2 0
+files/main.go:34.2,34.53 1 1
+files/main.go:34.53,37.26 2 1
+files/main.go:37.26,38.69 1 1
+files/main.go:38.69,40.5 1 1
+files/main.go:42.3,42.15 1 1
+files/main.go:44.2,46.27 3 1
+files/main.go:49.13,52.16 3 0
+files/main.go:52.16,53.13 1 0
