@@ -26,7 +26,7 @@ func getResponse(reqString string) responseData {
 			slice := strings.Split(resp.Body.String(), ",")
 
 			for i := range slice {
-				slice[i] = strings.TrimSpace(strings.ToLower(slice[i]))
+				slice[i] = strings.TrimSpace(slice[i])
 			}
 
 			return responseData{resp.Code, len(slice), slice, resp.Body.String()}
@@ -166,8 +166,12 @@ func TestCafeSearch(t *testing.T) {
 			require.Equal(t, v.wantCount, resp.count, ErrMsg, v.reqParams, resp.answer)
 
 			if searchWord, ok := v.reqParams["search"]; ok {
+			
+				searchLower := strings.ToLower(searchWord)
+
 				for _, cafe := range resp.slice {
-					require.Contains(t, strings.TrimSpace(cafe), strings.ToLower(searchWord), ErrMsg, v.reqParams, resp.answer)
+					cafeLower := strings.ToLower(cafe)
+					require.Contains(t, cafeLower, searchLower, ErrMsg, v.reqParams, resp.answer)
 				}
 			}
 		})
@@ -200,7 +204,7 @@ func TestCafeCount(t *testing.T) {
 			label:      "очень много кафе для Москвы",
 			reqParams:  map[string]string{"city": "moscow", "count": "100"},
 			wantStatus: http.StatusOK,
-			wantCount:  5,
+			wantCount:  len(cafeList["moscow"]),
 		},
 	}
 
